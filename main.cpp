@@ -11,9 +11,12 @@
 #include<sstream>
 #include <chrono>
 
+
 #define NOGUI false
 #define screenScale 300
 
+std::string path = "/Users/nikitakomkov/CLionProjects/robofootball99/";
+#define FPS 60
 std::chrono::microseconds pms = duration_cast<std::chrono::microseconds>(
         std::chrono::system_clock::now().time_since_epoch()
 );
@@ -37,15 +40,30 @@ struct Dot {
     }
 };
 
+struct Line {
+    double x1, y1, x2, y2;
+
+    Line(double _x1, double _y1, double _x2, double _y2) : x1(_x1), y1(_y1), x2(_x2), y2(_y2) {};
+
+    double operator!() const {
+        double res = sqrt((double) x1 * x1 + y1 * y1);
+        double res2 = sqrt((double) x2 * x2 + y2 * y2);
+        double res3 = (x1 * x2 + y1 * y2);
+        return acos((double) res3 / (res2 * res));
+    }
+
+};
 
 struct Robot {
-    double x = 0.1, y = 0.1, px = 0, py = 0, angle = 0, headSize = 0.07;
+    double x = 0.1, y = 0.1, px = 0, py = 0, angle = 0, headSize = 0.07, bx, by;
     std::vector<Dot> dots = {{0.095,  0.055},
                              {0.095,  -0.055},
                              {-0.095, -0.055},
                              {-0.095, 0.055}};
+    std::vector<std::pair<std::string, Dot>> showDots = {};
     Dot centralDot{0, 0.055};
     sf::Color color = sf::Color::White;
+    bool is_bounce = false;
 
     Robot() {};
 
@@ -74,82 +92,48 @@ struct Robot {
             y = maxY + 1.2;
     }
 
-    void socket(int z) {
-
+    void socket(int z, int maxX, int maxY) {
         TcpServerSocket server("localhost", z);
         server.acceptConnection();
         std::cout << z << "\n";
         std::cout << "OK\n";
         char o[100];
         while (true) {
+            std::string k;
+            Line line(x, y, bx, by);
+            if (fabsl(!line - angle) < M_PI / 4) {
+                k += "Ball: " + std::to_string(!line - angle + M_PI / 8) + "\n";
+            }
+            for(auto const &i : showDots){
+                Line line(x, y, i.second.x, i.second.y);
+                if (fabsl(!line - angle) < M_PI / 4) {
+                    k += i.first + ": " + std::to_string(!line - angle + M_PI / 8) + "\n";
+                }
+            }
+            char *kk;
+            strcpy(kk, k.c_str());
+            server.sendData(kk, 100);
             server.receiveData(o, 100);
             if (o[0] == 'q')
                 break;
             std::cout << o << "\n";
             std::stringstream s(o);
             double _x, _y, _a;
-            s >> _x >> _y >> _a;
-            x += _x;
-            y += _y;
-            angle += _a;
+            int _bounce;
+            s >> _x >> _y >> _a >> _bounce;
+
+            if (_bounce) {
+                is_bounce = true;
+            } else {
+                this->move(_x, _y, maxX, maxY);
+                this->rotate(_a);
+            }
         }
-
     }
 
 
 };
 
-struct Line {
-    double x1, y1, x2, y2;
-
-    Line(double X1, double Y1, double X2, double Y2) {
-        x1 = std::min(X1, X2);
-        x2 = std::max(X1, X2);
-        y1 = std::min(Y1, Y2);
-        y2 = std::max(Y1, Y2);
-    }
-
-    bool operator<(const Line l) const {
-        int sx1 = (x1 + x2) / 2;
-        int sx2 = (l.x1 + l.x2) / 2;
-        int sy1 = (y1 + y2) / 2;
-        int sy2 = (l.y1 + l.y2) / 2;
-        if (sx1 == sx2)
-            return sy1 < sy2;
-        return sx1 < sx2;
-    }
-
-    bool operator>(const Line l) const {
-        int sx1 = (x1 + x2) / 2;
-        int sx2 = (l.x1 + l.x2) / 2;
-        int sy1 = (y1 + y2) / 2;
-        int sy2 = (l.y1 + l.y2) / 2;
-        if (sx1 == sx2)
-            return sy1 > sy2;
-        return sx1 > sx2;
-    }
-
-    bool operator==(const Line l) const {
-        int sx1 = (x1 + x2) / 2;
-        int sx2 = (l.x1 + l.x2) / 2;
-        int sy1 = (y1 + y2) / 2;
-        int sy2 = (l.y1 + l.y2) / 2;
-        return sx1 == sx2 && sy1 == sy2;
-    }
-
-    bool operator!=(const Line l) const {
-        int sx1 = (x1 + x2) / 2;
-        int sx2 = (l.x1 + l.x2) / 2;
-        int sy1 = (y1 + y2) / 2;
-        int sy2 = (l.y1 + l.y2) / 2;
-        return !(sx1 == sx2 && sy1 == sy2);
-    }
-
-    friend std::ostream &operator<<(std::ostream &o, Line &l) {
-        o << l.x1 << " " << l.y1 << "|" << l.x2 << " " << l.y2 << std::endl;
-        return o;
-    }
-};
 
 struct Ball {
     double x, y, ax, ay, sx, sy, s = 0.08;
@@ -191,8 +175,12 @@ struct Ball {
         }
     }
 
-    void check_borders(int xSize, int ySize, int scale) {
+    std::pair<int, int> check_borders(int xSize, int ySize, int scale) {
+        std::pair l = {0, 0};
         if (x >= (double) xSize / scale + 0.1) {
+            if (abs(y - (double) ySize / 2 / scale - (double) 60 / scale) <= 0.75) {
+                l.first = 1;
+            }
             x = (double) xSize / scale / 2 + (double) 60 / scale;
             ax = 0;
             y = (double) ySize / scale / 2 + (double) 60 / scale;
@@ -207,6 +195,9 @@ struct Ball {
             std::cout << "border 2\n";
         }
         if (x <= 0.1) {
+            if (abs(y - (double) ySize / 2 / scale - (double) 60 / scale) <= 0.75) {
+                l.second = 1;
+            }
             x = (double) xSize / scale / 2 + (double) 60 / scale;
             ax = 0;
             y = (double) ySize / scale / 2 + (double) 60 / scale;
@@ -220,6 +211,7 @@ struct Ball {
             ay = 0;
             std::cout << "border 4 \n";
         }
+        return l;
     }
 
 };
@@ -230,6 +222,8 @@ struct Field {
     int ySize;
     int scale;
     int indent = 60;
+    int c1 = 0;
+    int c2 = 0;
 
     Field(std::string fileName, int s = 500) {
         std::ifstream fin(fileName);
@@ -376,10 +370,22 @@ struct Field {
         window.draw(R);
     }
 
+    void drawText(sf::RenderWindow &window) {
+        sf::Font font;
+        font.loadFromFile(path + "arialmt.ttf");
+        sf::Text text;
+        text.setFont(font);
+        text.setString(std::to_string(c1) + ":" + std::to_string(c2));
+        text.setCharacterSize(72);
+        text.setFillColor(sf::Color::Red);
+        text.setPosition(xSize / 2 + indent - 54, 50);
+        window.draw(text);
+    }
+
 };
 
-void Socket(Robot &robot, int z) {
-    robot.socket(z);
+void Socket(Robot &robot, int z, int xSize, int Ysize) {
+    robot.socket(z, xSize, Ysize);
 }
 
 int main() {
@@ -423,31 +429,39 @@ int main() {
                     robot.rotate(0.05);
                 }
                 if (event.key.code == sf::Keyboard::Space) {
-                    ball.checkRobotPush(robot, field.scale);
+                    robot.is_bounce = true;
                 }
 
             }
 
         }
-
+        if (robot.is_bounce) {
+            robot.is_bounce = false;
+            ball.checkRobotPush(robot, field.scale);
+        }
         field.drawField(window);
         field.drawRobot(robot, window);
         field.drawRobot(robot1, window);
         ball.tick();
         ball.check_robot(robot, field.scale);
+        robot.bx = ball.x;
+        robot.by = ball.y;
         field.drawBall(ball, window);
-        ball.check_borders(field.xSize, field.ySize, field.scale);
+        auto m = ball.check_borders(field.xSize, field.ySize, field.scale);
+        field.c1 += m.first;
+        field.c2 += m.second;
+        field.drawText(window);
         window.display();
 
         std::chrono::microseconds ms = duration_cast<std::chrono::microseconds>(
                 std::chrono::system_clock::now().time_since_epoch()
         );
 
-        while ((ms - pms).count() <= 1000000 / 60) {
+        while ((ms - pms).count() < 1000000 / FPS) {
             ms = duration_cast<std::chrono::microseconds>(
                     std::chrono::system_clock::now().time_since_epoch());
         }
-        std::cout << (ms - pms).count()<<"\n";
+        //std::cout << 1000000 / (ms - pms).count()<<"\n";
         pms = duration_cast<std::chrono::microseconds>(
                 std::chrono::system_clock::now().time_since_epoch()
         );
