@@ -52,6 +52,10 @@ struct Line {
         return acos((double) res3 / (res2 * res));
     }
 
+    double operator++() const {
+        return sqrt(pow(x1 - x2, 2) + pow(y1 - y2, 2));
+    }
+
 };
 
 struct Robot {
@@ -99,20 +103,21 @@ struct Robot {
         std::cout << "OK\n";
         char o[100];
         while (true) {
-            std::string k;
+            std::string str;
             Line line(x, y, bx, by);
             if (fabsl(!line - angle) < M_PI / 4) {
-                k += "Ball: " + std::to_string(!line - angle + M_PI / 8) + "\n";
+                str += "Ball: " + std::to_string(!line - angle + M_PI / 8) + " " + std::to_string(++line) + "\n";
             }
-            for(auto const &i : showDots){
+            for (auto const &i: showDots) {
                 Line line(x, y, i.second.x, i.second.y);
                 if (fabsl(!line - angle) < M_PI / 4) {
-                    k += i.first + ": " + std::to_string(!line - angle + M_PI / 8) + "\n";
+                    str += i.first + ": " + std::to_string(!line - angle + M_PI / 8) + " " + std::to_string(++line) +
+                           "\n";
                 }
             }
-            char *kk;
-            strcpy(kk, k.c_str());
-            server.sendData(kk, 100);
+            char *_str;
+            strcpy(_str, str.c_str());
+            server.sendData(_str, 100);
             server.receiveData(o, 100);
             if (o[0] == 'q')
                 break;
@@ -401,7 +406,7 @@ int main() {
     Ball ball(0.5, 0.5);
     //ball.ax = 0.1;
     //sball.ay = 0.1;
-    ball.color = sf::Color::Magenta;
+    ball.color = sf::Color(250, 132, 43);
 
     while (window.isOpen()) {
         sf::Event event;
