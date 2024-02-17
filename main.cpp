@@ -15,6 +15,11 @@
 #define NOGUI false
 #define screenScale 300
 
+#define GUI
+#define ShowFPS
+#define LockFPS
+#define SocketTurn
+
 std::string path = "/Users/nikitakomkov/CLionProjects/robofootball99/";
 #define FPS 60
 std::chrono::microseconds pms = duration_cast<std::chrono::microseconds>(
@@ -81,11 +86,28 @@ struct Robot {
         //std::cout << angle << std::endl;
     }
 
-    void move(double X, double Y, double maxX, double maxY) {
+    bool operator!= (Robot& _x){
+        return !(x == _x.x && y == _x.y && angle == _x.angle && px == _x.px && py == _x.py);
+    }
+
+    void move(double X, double Y, double maxX, double maxY, std::vector<Robot> &col) {
         px = x;
         py = y;
+        auto xx = x;
         x += X * cos(angle) + Y * sin(angle);
+        auto yy = y;
         y += -X * sin(angle) + Y * cos(angle);
+        for (auto &i: col) {
+
+            if (i != *this)
+
+                if (pow(x - i.x, 2) + pow(y - i.y, 2) < headSize / 2) {
+                    x = xx;
+                    y = yy;
+                    return;
+                }
+        }
+
         if (x < 0)
             x = 0;
         if (y < 0)
@@ -96,7 +118,7 @@ struct Robot {
             y = maxY + 1.2;
     }
 
-    void socket(int z, int maxX, int maxY) {
+    void socket(int z, int maxX, int maxY, std::vector<Robot> &robots) {
         TcpServerSocket server("localhost", z);
         server.acceptConnection();
         std::cout << z << "\n";
@@ -130,7 +152,7 @@ struct Robot {
             if (_bounce) {
                 is_bounce = true;
             } else {
-                this->move(_x, _y, maxX, maxY);
+                this->move(_x, _y, maxX, maxY, robots);
                 this->rotate(_a);
             }
         }
@@ -389,24 +411,30 @@ struct Field {
 
 };
 
-void Socket(Robot &robot, int z, int xSize, int Ysize) {
-    robot.socket(z, xSize, Ysize);
+void Socket(Robot &robot, int z, int xSize, int Ysize, std::vector<Robot> &robots) {
+    robot.socket(z, xSize, Ysize, robots);
 }
 
 int main() {
     Field field("../file.json");
+#ifdef GUI
     sf::RenderWindow window(field.getWindowSize(), "Robofootbal ");
-
+#endif
     Robot robot;
     robot.color = sf::Color::Red;
     Robot robot1;
     robot1.color = sf::Color::Blue;
-    //std::thread t(Socket, std::ref(robot), 5040);
-
+    std::vector<Robot> robots = {robot, robot1};
+    robot.x = 0.6;
+    robot.y = 0.6;
+#ifdef SocketTurn
+    std::thread t(Socket, std::ref(robot), 5040, field.xSize, field.ySize, std::ref(robots));
+#endif
     Ball ball(0.5, 0.5);
     //ball.ax = 0.1;
     //sball.ay = 0.1;
     ball.color = sf::Color(250, 132, 43);
+#ifdef GUI
 
     while (window.isOpen()) {
         sf::Event event;
@@ -416,16 +444,16 @@ int main() {
 
             else if (event.type == sf::Event::KeyPressed) {
                 if (event.key.code == sf::Keyboard::S) {
-                    robot.move(0, -0.01, field.xSize / field.scale, field.ySize / field.scale);
+                    robot.move(0, -0.01, field.xSize / field.scale, field.ySize / field.scale, robots);
                 }
                 if (event.key.code == sf::Keyboard::W) {
-                    robot.move(0, 0.01, field.xSize / field.scale, field.ySize / field.scale);
+                    robot.move(0, 0.01, field.xSize / field.scale, field.ySize / field.scale, robots);
                 }
                 if (event.key.code == sf::Keyboard::D) {
-                    robot.move(-0.01, 0, field.xSize / field.scale, field.ySize / field.scale);
+                    robot.move(-0.01, 0, field.xSize / field.scale, field.ySize / field.scale, robots);
                 }
                 if (event.key.code == sf::Keyboard::A) {
-                    robot.move(0.01, 0, field.xSize / field.scale, field.ySize / field.scale);
+                    robot.move(0.01, 0, field.xSize / field.scale, field.ySize / field.scale, robots);
                 }
                 if (event.key.code == sf::Keyboard::Right) {
                     robot.rotate(-0.05);
@@ -440,32 +468,45 @@ int main() {
             }
 
         }
+
+        field.drawField(window);
+        field.drawRobot(robot, window);
+        field.drawRobot(robot1, window);
+#endif
+#ifndef GUI
+    while (true) {
+#endif
         if (robot.is_bounce) {
             robot.is_bounce = false;
             ball.checkRobotPush(robot, field.scale);
         }
-        field.drawField(window);
-        field.drawRobot(robot, window);
-        field.drawRobot(robot1, window);
         ball.tick();
         ball.check_robot(robot, field.scale);
         robot.bx = ball.x;
         robot.by = ball.y;
+#ifdef GUI
         field.drawBall(ball, window);
+#endif
         auto m = ball.check_borders(field.xSize, field.ySize, field.scale);
         field.c1 += m.first;
         field.c2 += m.second;
+#ifdef GUI
         field.drawText(window);
         window.display();
+#endif
 
         std::chrono::microseconds ms = duration_cast<std::chrono::microseconds>(
                 std::chrono::system_clock::now().time_since_epoch()
         );
-
+#ifdef LockFPS
         while ((ms - pms).count() < 1000000 / FPS) {
             ms = duration_cast<std::chrono::microseconds>(
                     std::chrono::system_clock::now().time_since_epoch());
         }
+#endif
+#ifdef ShowFPS
+        std::cout << (1e6 / (ms - pms).count()) << "\n";
+#endif
         //std::cout << 1000000 / (ms - pms).count()<<"\n";
         pms = duration_cast<std::chrono::microseconds>(
                 std::chrono::system_clock::now().time_since_epoch()
